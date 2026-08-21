@@ -34,6 +34,13 @@ A Git worktree used as an isolated workspace for a thread. If a thread has a `wo
 
 The main durable unit of conversation and workspace history. In [the orchestration contracts][1], a thread holds messages, activities, checkpoints, and session-related state. See [projector.ts][4].
 
+#### Child thread
+
+A thread created by another T3 thread through the agent orchestration toolkit. Its optional
+`spawnedByThreadId` records the direct parent durably for lineage and grouping. Thread control is
+environment-wide, matching Herdr's session-wide pane model; parentage is not an authorization
+boundary.
+
 #### Turn
 
 A single user-to-assistant work cycle inside a thread. It starts with user input and ends when the session leaves `running` status, which [projector.ts][4] treats as the authoritative completion signal (`settledTurnStateForSessionStatus`). Checkpoint and diff work may settle afterward without changing when the turn ended. See [the contracts][1] and [ProviderRuntimeIngestion.ts][5].

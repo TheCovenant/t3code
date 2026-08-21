@@ -32,6 +32,7 @@ import {
   ThreadUnsnoozedPayload,
   ThreadRevertedPayload,
   ThreadSessionSetPayload,
+  ThreadTurnInterruptRequestedPayload,
   ThreadTurnDiffCompletedPayload,
 } from "./Schemas.ts";
 
@@ -291,6 +292,9 @@ export function projectEvent(
           {
             id: payload.threadId,
             projectId: payload.projectId,
+            ...(payload.spawnedByThreadId === undefined
+              ? {}
+              : { spawnedByThreadId: payload.spawnedByThreadId }),
             title: payload.title,
             modelSelection: payload.modelSelection,
             runtimeMode: payload.runtimeMode,
@@ -612,6 +616,35 @@ export function projectEvent(
         };
       });
 
+    case "thread.turn-interrupt-requested":
+      return Effect.gen(function* () {
+        const payload = yield* decodeForEvent(
+          ThreadTurnInterruptRequestedPayload,
+          event.payload,
+          event.type,
+          "payload",
+        );
+        if (payload.turnId === undefined) return nextBase;
+        const thread = nextBase.threads.find((entry) => entry.id === payload.threadId);
+        if (!thread) return nextBase;
+        const existingTurn =
+          thread.latestTurn?.turnId === payload.turnId ? thread.latestTurn : null;
+        return {
+          ...nextBase,
+          threads: updateThread(nextBase.threads, payload.threadId, {
+            latestTurn: {
+              turnId: payload.turnId,
+              state: "interrupted",
+              requestedAt: existingTurn?.requestedAt ?? payload.createdAt,
+              startedAt: existingTurn?.startedAt ?? payload.createdAt,
+              completedAt: existingTurn?.completedAt ?? payload.createdAt,
+              assistantMessageId: existingTurn?.assistantMessageId ?? null,
+            },
+            updatedAt: event.occurredAt,
+          }),
+        };
+      });
+
     case "thread.proposed-plan-upserted":
       return Effect.gen(function* () {
         const payload = yield* decodeForEvent(
@@ -693,6 +726,12 @@ export function projectEvent(
         // checkpoint, but don't settle a turn its session is still running.
         const turnStillRunning =
           thread.session?.status === "running" && thread.session.activeTurnId === payload.turnId;
+        const checkpointTurnState = checkpointStatusToLatestTurnState(payload.status);
+        const latestTurnState =
+          thread.latestTurn?.turnId === payload.turnId &&
+          (thread.latestTurn.state === "interrupted" || thread.latestTurn.state === "error")
+            ? thread.latestTurn.state
+            : checkpointTurnState;
 
         return {
           ...nextBase,
@@ -702,7 +741,7 @@ export function projectEvent(
               ? thread.latestTurn
               : {
                   turnId: payload.turnId,
-                  state: checkpointStatusToLatestTurnState(payload.status),
+                  state: latestTurnState,
                   requestedAt:
                     thread.latestTurn?.turnId === payload.turnId
                       ? thread.latestTurn.requestedAt

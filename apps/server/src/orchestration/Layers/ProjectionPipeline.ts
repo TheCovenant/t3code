@@ -605,6 +605,7 @@ const makeOrchestrationProjectionPipeline = Effect.fn("makeOrchestrationProjecti
           yield* projectionThreadRepository.upsert({
             threadId: event.payload.threadId,
             projectId: event.payload.projectId,
+            spawnedByThreadId: event.payload.spawnedByThreadId ?? null,
             title: event.payload.title,
             modelSelection: event.payload.modelSelection,
             runtimeMode: event.payload.runtimeMode,
@@ -1407,7 +1408,14 @@ const makeOrchestrationProjectionPipeline = Effect.fn("makeOrchestrationProjecti
             threadId: event.payload.threadId,
             turnId: event.payload.turnId,
           });
-          const nextState = event.payload.status === "error" ? "error" : "completed";
+          const nextState =
+            Option.isSome(existingTurn) && existingTurn.value.state === "interrupted"
+              ? "interrupted"
+              : Option.isSome(existingTurn) && existingTurn.value.state === "error"
+                ? "error"
+                : event.payload.status === "error"
+                  ? "error"
+                  : "completed";
           yield* projectionTurnRepository.clearCheckpointTurnConflict({
             threadId: event.payload.threadId,
             turnId: event.payload.turnId,

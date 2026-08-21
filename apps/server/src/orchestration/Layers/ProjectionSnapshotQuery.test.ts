@@ -2382,12 +2382,14 @@ projectionSnapshotLayer("ProjectionSnapshotQuery windowed thread detail", (it) =
       const detailWithPinnedRequests = yield* snapshotQuery.getThreadDetailById(threadW);
       assert.equal(detailWithPinnedRequests._tag, "Some");
       if (detailWithPinnedRequests._tag === "Some") {
-        const ids = detailWithPinnedRequests.value.activities.map((activity) => activity.id);
+        const ids = new Set(
+          detailWithPinnedRequests.value.activities.map((activity) => activity.id),
+        );
         assert.equal(detailWithPinnedRequests.value.activities.length, 503);
-        assert.equal(ids.includes(asEventId("approval-old")), true);
-        assert.equal(ids.includes(asEventId("user-input-old")), true);
-        assert.equal(ids.includes(asEventId("user-input-closed")), false);
-        assert.equal(ids.includes(asEventId("user-input-tied-z-request")), true);
+        assert.equal(ids.has(asEventId("approval-old")), true);
+        assert.equal(ids.has(asEventId("user-input-old")), true);
+        assert.equal(ids.has(asEventId("user-input-closed")), false);
+        assert.equal(ids.has(asEventId("user-input-tied-z-request")), true);
       }
 
       const windowWithPinnedRequests = yield* snapshotQuery.getThreadDetailSnapshot(threadW, {
@@ -2395,12 +2397,14 @@ projectionSnapshotLayer("ProjectionSnapshotQuery windowed thread detail", (it) =
       });
       assert.equal(windowWithPinnedRequests._tag, "Some");
       if (windowWithPinnedRequests._tag === "Some") {
-        const ids = windowWithPinnedRequests.value.thread.activities.map((activity) => activity.id);
+        const ids = new Set(
+          windowWithPinnedRequests.value.thread.activities.map((activity) => activity.id),
+        );
         assert.equal(windowWithPinnedRequests.value.thread.activities.length, 503);
-        assert.equal(ids.includes(asEventId("approval-old")), true);
-        assert.equal(ids.includes(asEventId("user-input-old")), true);
-        assert.equal(ids.includes(asEventId("user-input-closed")), false);
-        assert.equal(ids.includes(asEventId("user-input-tied-z-request")), true);
+        assert.equal(ids.has(asEventId("approval-old")), true);
+        assert.equal(ids.has(asEventId("user-input-old")), true);
+        assert.equal(ids.has(asEventId("user-input-closed")), false);
+        assert.equal(ids.has(asEventId("user-input-tied-z-request")), true);
       }
     }),
   );
@@ -2456,6 +2460,58 @@ projectionSnapshotLayer("ProjectionSnapshotQuery windowed thread detail", (it) =
         assert.deepEqual(messageIds(snapshot.value), ["pre-turn-msg"]);
         assert.equal(snapshot.value.page?.hasMore, false);
         assert.equal(snapshot.value.page?.beforeCursor, null);
+      }
+    }),
+  );
+
+  it.effect("retains lineage on active shell and detail snapshots", () =>
+    Effect.gen(function* () {
+      const sql = yield* SqlClient.SqlClient;
+      const snapshotQuery = yield* ProjectionSnapshotQuery;
+      const parentThreadId = ThreadId.make("thread-parent");
+
+      yield* sql`DELETE FROM projection_threads`;
+      yield* sql`DELETE FROM projection_turns`;
+      yield* sql`DELETE FROM projection_thread_sessions`;
+
+      yield* sql`
+        INSERT INTO projection_threads (
+          thread_id, project_id, spawned_by_thread_id, title, model_selection_json,
+          runtime_mode, interaction_mode, branch, worktree_path,
+          pending_approval_count, pending_user_input_count, has_actionable_proposed_plan,
+          created_at, updated_at, archived_at, deleted_at
+        )
+        VALUES
+          ('thread-child-active', 'project-a', 'thread-parent', 'Active child',
+            '{"provider":"codex","model":"gpt-5-codex"}', 'full-access', 'default',
+            'agent/active', '/tmp/agent-active', 0, 0, 0,
+            '2026-08-19T00:00:01.000Z', '2026-08-19T00:00:02.000Z', NULL, NULL),
+          ('thread-child-archived', 'project-a', 'thread-parent', 'Archived child',
+            '{"provider":"codex","model":"gpt-5-codex"}', 'full-access', 'default',
+            'agent/archived', '/tmp/agent-archived', 0, 0, 0,
+            '2026-08-19T00:00:03.000Z', '2026-08-19T00:00:04.000Z',
+            '2026-08-19T00:00:05.000Z', NULL),
+          ('thread-unrelated', 'project-a', NULL, 'Unrelated',
+            '{"provider":"codex","model":"gpt-5-codex"}', 'full-access', 'default',
+            'main', '/tmp/project-a', 0, 0, 0,
+            '2026-08-19T00:00:06.000Z', '2026-08-19T00:00:07.000Z', NULL, NULL)
+      `;
+
+      const shellSnapshot = yield* snapshotQuery.getShellSnapshot();
+      const children = shellSnapshot.threads.filter(
+        (thread) => thread.spawnedByThreadId === parentThreadId,
+      );
+
+      assert.equal(children.length, 1);
+      assert.equal(children[0]?.id, ThreadId.make("thread-child-active"));
+      assert.equal(children[0]?.spawnedByThreadId, parentThreadId);
+      assert.equal(children[0]?.worktreePath, "/tmp/agent-active");
+      const detail = yield* snapshotQuery.getThreadDetailSnapshot(
+        ThreadId.make("thread-child-active"),
+      );
+      assert.equal(detail._tag, "Some");
+      if (detail._tag === "Some") {
+        assert.equal(detail.value.thread.spawnedByThreadId, parentThreadId);
       }
     }),
   );

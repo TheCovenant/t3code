@@ -41,16 +41,126 @@ it.effect("stores only a token hash, resolves the bearer token, and revokes by t
       providerInstanceId: ProviderInstanceId.make("codex"),
     });
     expect(issued.config.endpoint).toBe("http://127.0.0.1:43123/mcp");
+    expect(issued.config.capabilities).toEqual(["preview"]);
     const token = issued.config.authorizationHeader.replace(/^Bearer\s+/, "");
     expect(token.length).toBeGreaterThan(20);
 
     const resolved = yield* registry.resolve(token);
     expect(resolved?.threadId).toBe(threadId);
+    expect(resolved?.capabilities).toEqual(new Set(["preview"]));
 
     yield* registry.revokeThread(threadId);
     expect(yield* registry.resolve(token)).toBeUndefined();
 
     timestamp += 2_000;
+  }),
+);
+
+it.effect("issues thread-only credentials against the restricted endpoint", () =>
+  Effect.gen(function* () {
+    const registry = yield* makeRegistry(() => 1_000);
+    const threadId = ThreadId.make("thread-control-only");
+    const issued = yield* registry.issue({
+      threadId,
+      providerInstanceId: ProviderInstanceId.make("codex"),
+      capabilities: ["threads"],
+    });
+
+    expect(issued.config.endpoint).toBe("http://127.0.0.1:43123/mcp/threads");
+    expect(issued.config.capabilities).toEqual(["threads"]);
+
+    const token = issued.config.authorizationHeader.replace(/^Bearer\s+/, "");
+    const resolved = yield* registry.resolve(token);
+    expect(resolved?.threadId).toBe(threadId);
+    expect(resolved?.capabilities).toEqual(new Set(["threads"]));
+  }),
+);
+
+it.effect("issues the combined endpoint with deduplicated thread and preview capabilities", () =>
+  Effect.gen(function* () {
+    const registry = yield* makeRegistry(() => 1_000);
+    const issued = yield* registry.issue({
+      threadId: ThreadId.make("thread-combined"),
+      providerInstanceId: ProviderInstanceId.make("claudeAgent"),
+      capabilities: ["threads", "preview", "threads"],
+    });
+
+    expect(issued.config.endpoint).toBe("http://127.0.0.1:43123/mcp");
+    expect(issued.config.capabilities).toEqual(["threads", "preview"]);
+    const token = issued.config.authorizationHeader.replace(/^Bearer\s+/, "");
+    expect((yield* registry.resolve(token))?.capabilities).toEqual(new Set(["threads", "preview"]));
+  }),
+);
+
+it.effect("revoking one thread leaves credentials for other chats valid", () =>
+  Effect.gen(function* () {
+    const registry = yield* makeRegistry(() => 1_000);
+    const firstThread = ThreadId.make("thread-revoke-first");
+    const secondThread = ThreadId.make("thread-revoke-second");
+    const first = yield* registry.issue({
+      threadId: firstThread,
+      providerInstanceId: ProviderInstanceId.make("codex"),
+      capabilities: ["threads"],
+    });
+    const second = yield* registry.issue({
+      threadId: secondThread,
+      providerInstanceId: ProviderInstanceId.make("claudeAgent"),
+      capabilities: ["threads"],
+    });
+    const firstToken = first.config.authorizationHeader.replace(/^Bearer\s+/, "");
+    const secondToken = second.config.authorizationHeader.replace(/^Bearer\s+/, "");
+
+    yield* registry.revokeThread(firstThread);
+
+    expect(yield* registry.resolve(firstToken)).toBeUndefined();
+    expect((yield* registry.resolve(secondToken))?.threadId).toBe(secondThread);
+  }),
+);
+
+it.effect("revokes only the selected provider session when a chat has multiple credentials", () =>
+  Effect.gen(function* () {
+    const registry = yield* makeRegistry(() => 1_000);
+    const threadId = ThreadId.make("thread-provider-session-revoke");
+    const first = yield* registry.issue({
+      threadId,
+      providerInstanceId: ProviderInstanceId.make("codex"),
+      capabilities: ["threads"],
+    });
+    const second = yield* registry.issue({
+      threadId,
+      providerInstanceId: ProviderInstanceId.make("claudeAgent"),
+      capabilities: ["threads"],
+    });
+    const firstToken = first.config.authorizationHeader.replace(/^Bearer\s+/, "");
+    const secondToken = second.config.authorizationHeader.replace(/^Bearer\s+/, "");
+
+    yield* registry.revokeProviderSession(first.config.providerSessionId);
+
+    expect(yield* registry.resolve(firstToken)).toBeUndefined();
+    expect((yield* registry.resolve(secondToken))?.providerSessionId).toBe(
+      second.config.providerSessionId,
+    );
+  }),
+);
+
+it.effect("revokes every provider credential during environment shutdown", () =>
+  Effect.gen(function* () {
+    const registry = yield* makeRegistry(() => 1_000);
+    const first = yield* registry.issue({
+      threadId: ThreadId.make("thread-shutdown-first"),
+      providerInstanceId: ProviderInstanceId.make("codex"),
+    });
+    const second = yield* registry.issue({
+      threadId: ThreadId.make("thread-shutdown-second"),
+      providerInstanceId: ProviderInstanceId.make("cursor"),
+    });
+    const firstToken = first.config.authorizationHeader.replace(/^Bearer\s+/, "");
+    const secondToken = second.config.authorizationHeader.replace(/^Bearer\s+/, "");
+
+    yield* registry.revokeAll;
+
+    expect(yield* registry.resolve(firstToken)).toBeUndefined();
+    expect(yield* registry.resolve(secondToken)).toBeUndefined();
   }),
 );
 
@@ -61,6 +171,8 @@ it.effect("builds MCP endpoints from the bound server host", () =>
       ["0.0.0.0", "http://127.0.0.1:43123/mcp"],
       ["localhost", "http://localhost:43123/mcp"],
       ["127.0.0.1", "http://127.0.0.1:43123/mcp"],
+      ["::1", "http://[::1]:43123/mcp"],
+      ["::", "http://127.0.0.1:43123/mcp"],
     ] as const;
 
     for (const [hostname, expectedEndpoint] of cases) {

@@ -267,6 +267,7 @@ it.effect("accepts bootstrap metadata in thread.turn.start", () =>
       bootstrap: {
         createThread: {
           projectId: "project-1",
+          spawnedByThreadId: "thread-parent",
           title: "Bootstrap thread",
           modelSelection: {
             provider: "codex",
@@ -289,6 +290,7 @@ it.effect("accepts bootstrap metadata in thread.turn.start", () =>
       createdAt: "2026-01-01T00:00:00.000Z",
     });
     assert.strictEqual(parsed.bootstrap?.createThread?.projectId, "project-1");
+    assert.strictEqual(parsed.bootstrap?.createThread?.spawnedByThreadId, "thread-parent");
     assert.strictEqual(parsed.bootstrap?.prepareWorktree?.baseBranch, "main");
     assert.strictEqual(parsed.bootstrap?.prepareWorktree?.startFromOrigin, true);
     assert.strictEqual(parsed.bootstrap?.runSetupScript, true);
@@ -314,6 +316,7 @@ it.effect("decodes thread.created runtime mode for historical events", () =>
 
     assert.strictEqual(parsed.runtimeMode, DEFAULT_RUNTIME_MODE);
     assert.strictEqual(parsed.modelSelection.instanceId, "codex");
+    assert.strictEqual(parsed.spawnedByThreadId, undefined);
   }),
 );
 
@@ -421,8 +424,10 @@ it.effect("defaults settled fields when decoding historical thread data", () =>
 
     assert.strictEqual(thread.settledOverride, null);
     assert.strictEqual(thread.settledAt, null);
+    assert.strictEqual(thread.spawnedByThreadId, undefined);
     assert.strictEqual(shell.settledOverride, null);
     assert.strictEqual(shell.settledAt, null);
+    assert.strictEqual(shell.spawnedByThreadId, undefined);
   }),
 );
 
