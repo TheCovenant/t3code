@@ -1,5 +1,5 @@
 // @effect-diagnostics nodeBuiltinImport:off - Build bootstrap inlines a source skill before an Effect runtime exists.
-import * as NodeFs from "node:fs/promises";
+import * as NodeFSP from "node:fs/promises";
 import * as NodePath from "node:path";
 
 import "vite-plus/test/config";
@@ -37,7 +37,7 @@ const rawMarkdownPlugin = {
   },
   async load(id: string) {
     if (!id.startsWith(rawMarkdownModulePrefix)) return null;
-    const contents = await NodeFs.readFile(id.slice(rawMarkdownModulePrefix.length), "utf8");
+    const contents = await NodeFSP.readFile(id.slice(rawMarkdownModulePrefix.length), "utf8");
     return `export default ${JSON.stringify(contents)};`;
   },
 };
