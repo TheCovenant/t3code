@@ -87,6 +87,7 @@ it.effect("registers the thread-only toolkit and scopes calls to the invoking ch
       "thread_list",
       "thread_read",
       "thread_send",
+      "thread_skill",
       "thread_spawn",
       "thread_wait",
     ]);
@@ -107,6 +108,11 @@ it.effect("registers the thread-only toolkit and scopes calls to the invoking ch
       idempotentHint: true,
     });
     expect(annotations.thread_read).toMatchObject({
+      readOnlyHint: true,
+      destructiveHint: false,
+      idempotentHint: true,
+    });
+    expect(annotations.thread_skill).toMatchObject({
       readOnlyHint: true,
       destructiveHint: false,
       idempotentHint: true,
@@ -135,6 +141,19 @@ it.effect("registers the thread-only toolkit and scopes calls to the invoking ch
     expect(result.isError).toBe(false);
     expect(result.structuredContent).toEqual({ threads: [], nextCursor: null });
     expect(calls).toEqual([threadId]);
+
+    const skill = yield* server
+      .callTool({ name: "thread_skill", arguments: {} })
+      .pipe(
+        Effect.provideService(McpInvocationContext.McpInvocationContext, context),
+        Effect.provideService(McpSchema.McpServerClient, client),
+      );
+    expect(skill.isError).toBe(false);
+    expect(skill.structuredContent).toMatchObject({ name: "t3-thread-control" });
+    expect(skill.structuredContent?.instructions).toContain("# T3 Thread Control");
+    for (const toolName of toolNames) {
+      expect(skill.structuredContent?.instructions).toContain(`\`${toolName}\``);
+    }
   }),
 );
 
@@ -244,19 +263,21 @@ it.effect("rejects thread tools when the credential lacks thread capability", ()
       Layer.provideMerge(McpServer.McpServer.layer),
     );
     const server = yield* McpServer.McpServer.pipe(Effect.provide(toolkitLayer));
-    const result = yield* server.callTool({ name: "thread_list", arguments: {} }).pipe(
-      Effect.provideService(McpInvocationContext.McpInvocationContext, {
-        ...invocation,
-        capabilities: new Set<McpInvocationContext.McpCapability>(),
-      }),
-      Effect.provideService(McpSchema.McpServerClient, client),
-    );
+    for (const name of ["thread_list", "thread_skill"]) {
+      const result = yield* server.callTool({ name, arguments: {} }).pipe(
+        Effect.provideService(McpInvocationContext.McpInvocationContext, {
+          ...invocation,
+          capabilities: new Set<McpInvocationContext.McpCapability>(),
+        }),
+        Effect.provideService(McpSchema.McpServerClient, client),
+      );
 
-    expect(result.isError).toBe(true);
-    expect(result.structuredContent).toBeUndefined();
-    expect(result.content).toEqual([
-      { type: "text", text: "This MCP credential does not grant thread control." },
-    ]);
+      expect(result.isError).toBe(true);
+      expect(result.structuredContent).toBeUndefined();
+      expect(result.content).toEqual([
+        { type: "text", text: "This MCP credential does not grant thread control." },
+      ]);
+    }
   }),
 );
 

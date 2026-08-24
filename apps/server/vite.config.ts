@@ -1,3 +1,7 @@
+// @effect-diagnostics nodeBuiltinImport:off - Build bootstrap inlines a source skill before an Effect runtime exists.
+import * as NodeFs from "node:fs/promises";
+import * as NodePath from "node:path";
+
 import "vite-plus/test/config";
 import { defineConfig, mergeConfig } from "vite-plus";
 
@@ -22,6 +26,21 @@ export { shouldBundleCliDependency };
 
 const repoEnv = loadRepoEnv();
 const cliBuildChannel = packageJson.version.includes("-nightly.") ? "nightly" : "latest";
+const rawMarkdownModulePrefix = "\0t3-raw-markdown:";
+
+const rawMarkdownPlugin = {
+  name: "t3-raw-markdown",
+  resolveId(source: string, importer?: string) {
+    if (!importer || !source.endsWith(".md?raw")) return null;
+    const filePath = NodePath.resolve(NodePath.dirname(importer), source.slice(0, -"?raw".length));
+    return `${rawMarkdownModulePrefix}${filePath}`;
+  },
+  async load(id: string) {
+    if (!id.startsWith(rawMarkdownModulePrefix)) return null;
+    const contents = await NodeFs.readFile(id.slice(rawMarkdownModulePrefix.length), "utf8");
+    return `export default ${JSON.stringify(contents)};`;
+  },
+};
 
 export default mergeConfig(
   baseConfig,
@@ -37,6 +56,7 @@ export default mergeConfig(
     },
     pack: {
       entry: ["src/bin.ts"],
+      plugins: [rawMarkdownPlugin],
       outDir: "dist",
       sourcemap: true,
       clean: true,

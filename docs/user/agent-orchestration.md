@@ -13,6 +13,10 @@ An agent can:
 - interrupt another chat's active turn
 - wait for another chat to finish or require attention
 
+T3 ships the thread-control guide with the server and exposes it as the read-only
+`thread_skill` tool. It is available whenever thread control is available, independent of the
+active project's skill folders.
+
 Child chats inherit the current project, provider, model, permission mode, and interaction mode.
 By default they also use the current checkout. For isolated edits, the agent can explicitly create a
 new Git worktree and branch; the project's worktree setup script runs before that child's first turn.
