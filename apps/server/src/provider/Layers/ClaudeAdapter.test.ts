@@ -14,6 +14,7 @@ import type {
 import {
   ApprovalRequestId,
   ClaudeSettings,
+  EnvironmentId,
   ProviderDriverKind,
   ProviderItemId,
   ProviderRuntimeEvent,
@@ -38,6 +39,7 @@ import { ServerSettingsService } from "../../serverSettings.ts";
 import { ProviderAdapterProcessError, ProviderAdapterValidationError } from "../Errors.ts";
 import type { ClaudeAdapterShape } from "../Services/ClaudeAdapter.ts";
 import { makeClaudeAdapter, type ClaudeAdapterLiveOptions } from "./ClaudeAdapter.ts";
+import * as McpProviderSession from "../../mcp/McpProviderSession.ts";
 const decodeClaudeSettings = Schema.decodeSync(ClaudeSettings);
 
 // Test-local service tag so the rest of the file can keep using `yield* ClaudeAdapter`.
@@ -273,6 +275,41 @@ const THREAD_ID = ThreadId.make("thread-claude-1");
 const RESUME_THREAD_ID = ThreadId.make("thread-claude-resume");
 
 describe("ClaudeAdapterLive", () => {
+  it.effect("passes the provider-scoped T3 MCP server into a Claude session", () => {
+    const harness = makeHarness();
+    const config = {
+      environmentId: EnvironmentId.make("environment-claude-mcp"),
+      threadId: THREAD_ID,
+      providerSessionId: "provider-session-claude-mcp",
+      providerInstanceId: ProviderInstanceId.make("claudeAgent"),
+      capabilities: ["threads"] as const,
+      endpoint: "http://127.0.0.1:43123/mcp/threads",
+      authorizationHeader: "Bearer claude-mcp-token",
+    };
+    McpProviderSession.setMcpProviderSession(config);
+
+    return Effect.gen(function* () {
+      const adapter = yield* ClaudeAdapter;
+      yield* adapter.startSession({
+        threadId: THREAD_ID,
+        provider: ProviderDriverKind.make("claudeAgent"),
+        runtimeMode: "full-access",
+      });
+
+      assert.deepEqual(harness.getLastCreateQueryInput()?.options.mcpServers, {
+        "t3-code": {
+          type: "http",
+          url: config.endpoint,
+          headers: { Authorization: config.authorizationHeader },
+        },
+      });
+    }).pipe(
+      Effect.ensuring(Effect.sync(() => McpProviderSession.clearMcpProviderSession(THREAD_ID))),
+      Effect.provideService(Random.Random, makeDeterministicRandomService()),
+      Effect.provide(harness.layer),
+    );
+  });
+
   it.effect("returns validation error for non-claude provider on startSession", () => {
     const harness = makeHarness();
     return Effect.gen(function* () {

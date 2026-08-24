@@ -79,6 +79,7 @@ projectionRepositoriesLayer("Projection repositories", (it) => {
       yield* threads.upsert({
         threadId: ThreadId.make("thread-null-options"),
         projectId: ProjectId.make("project-null-options"),
+        spawnedByThreadId: ThreadId.make("thread-parent"),
         title: "Null options thread",
         modelSelection: {
           instanceId: ProviderInstanceId.make("claudeAgent"),
@@ -132,6 +133,10 @@ projectionRepositoriesLayer("Projection repositories", (it) => {
         instanceId: ProviderInstanceId.make("claudeAgent"),
         model: "claude-opus-4-6",
       });
+      assert.strictEqual(
+        Option.getOrNull(persisted)?.spawnedByThreadId,
+        ThreadId.make("thread-parent"),
+      );
     }),
   );
 

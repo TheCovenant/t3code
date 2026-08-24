@@ -86,7 +86,7 @@ import * as AgentAwarenessRelay from "../src/relay/AgentAwarenessRelay.ts";
 const decodeCodexSettings = Schema.decodeEffect(CodexSettings);
 
 function runGit(cwd: string, args: ReadonlyArray<string>) {
-  return NodeChildProcess.execFileSync("git", args, {
+  return NodeChildProcess.execFileSync("git", ["-c", "commit.gpgsign=false", ...args], {
     cwd,
     stdio: ["ignore", "pipe", "pipe"],
     encoding: "utf8",

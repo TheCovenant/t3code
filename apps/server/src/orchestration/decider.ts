@@ -360,6 +360,19 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
         command,
         threadId: command.threadId,
       });
+      if (command.spawnedByThreadId !== undefined) {
+        const parentThread = yield* requireThread({
+          readModel,
+          command,
+          threadId: command.spawnedByThreadId,
+        });
+        if (parentThread.projectId !== command.projectId) {
+          return yield* new OrchestrationCommandInvariantError({
+            commandType: command.type,
+            detail: `Parent thread '${command.spawnedByThreadId}' belongs to a different project.`,
+          });
+        }
+      }
       return {
         ...(yield* withEventBase({
           aggregateKind: "thread",
@@ -371,6 +384,9 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
         payload: {
           threadId: command.threadId,
           projectId: command.projectId,
+          ...(command.spawnedByThreadId === undefined
+            ? {}
+            : { spawnedByThreadId: command.spawnedByThreadId }),
           title: command.title,
           modelSelection: command.modelSelection,
           runtimeMode: command.runtimeMode,

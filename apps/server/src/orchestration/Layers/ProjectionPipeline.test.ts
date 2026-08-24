@@ -806,7 +806,6 @@ it.layer(
         eventStore
           .append(event)
           .pipe(Effect.flatMap((savedEvent) => projectionPipeline.projectEvent(savedEvent)));
-
       yield* appendAndProject({
         type: "project.created",
         eventId: EventId.make("evt-revert-files-1"),
@@ -1805,6 +1804,147 @@ it.layer(BaseTestLayer)("OrchestrationProjectionPipeline", (it) => {
           { turnId: "turn-interrupted", checkpointTurnCount: null, status: "interrupted" },
         ]);
       }),
+  );
+
+  it.effect("preserves an interrupted turn when its final checkpoint arrives", () =>
+    Effect.gen(function* () {
+      const projectionPipeline = yield* OrchestrationProjectionPipeline;
+      const eventStore = yield* OrchestrationEventStore;
+      const sql = yield* SqlClient.SqlClient;
+      const threadId = ThreadId.make("thread-interrupt-checkpoint");
+      const turnId = TurnId.make("turn-interrupt-checkpoint");
+      const readTurnState = sql<{ readonly state: string }>`
+        SELECT state
+        FROM projection_turns
+        WHERE thread_id = 'thread-interrupt-checkpoint'
+          AND turn_id = 'turn-interrupt-checkpoint'
+      `.pipe(Effect.map((rows) => rows[0]?.state));
+      const appendAndProject = (event: Parameters<typeof eventStore.append>[0]) =>
+        eventStore
+          .append(event)
+          .pipe(Effect.flatMap((savedEvent) => projectionPipeline.projectEvent(savedEvent)));
+
+      yield* appendAndProject({
+        type: "thread.created",
+        eventId: EventId.make("evt-interrupt-checkpoint-1"),
+        aggregateKind: "thread",
+        aggregateId: threadId,
+        occurredAt: "2026-02-26T14:00:00.000Z",
+        commandId: CommandId.make("cmd-interrupt-checkpoint-1"),
+        causationEventId: null,
+        correlationId: CorrelationId.make("cmd-interrupt-checkpoint-1"),
+        metadata: {},
+        payload: {
+          threadId,
+          projectId: ProjectId.make("project-interrupt-checkpoint"),
+          title: "Interrupted checkpoint",
+          modelSelection: {
+            instanceId: ProviderInstanceId.make("claudeAgent"),
+            model: "claude-sonnet-5",
+          },
+          runtimeMode: "full-access",
+          branch: "main",
+          worktreePath: "/tmp/project-interrupt-checkpoint",
+          createdAt: "2026-02-26T14:00:00.000Z",
+          updatedAt: "2026-02-26T14:00:00.000Z",
+        },
+      });
+
+      yield* appendAndProject({
+        type: "thread.session-set",
+        eventId: EventId.make("evt-interrupt-checkpoint-2"),
+        aggregateKind: "thread",
+        aggregateId: threadId,
+        occurredAt: "2026-02-26T14:00:01.000Z",
+        commandId: CommandId.make("cmd-interrupt-checkpoint-2"),
+        causationEventId: null,
+        correlationId: CorrelationId.make("cmd-interrupt-checkpoint-2"),
+        metadata: {},
+        payload: {
+          threadId,
+          session: {
+            threadId,
+            status: "running",
+            providerName: "claudeAgent",
+            providerInstanceId: ProviderInstanceId.make("claudeAgent"),
+            runtimeMode: "full-access",
+            activeTurnId: turnId,
+            lastError: null,
+            updatedAt: "2026-02-26T14:00:01.000Z",
+          },
+        },
+      });
+
+      yield* appendAndProject({
+        type: "thread.turn-interrupt-requested",
+        eventId: EventId.make("evt-interrupt-checkpoint-3"),
+        aggregateKind: "thread",
+        aggregateId: threadId,
+        occurredAt: "2026-02-26T14:00:02.000Z",
+        commandId: CommandId.make("cmd-interrupt-checkpoint-3"),
+        causationEventId: null,
+        correlationId: CorrelationId.make("cmd-interrupt-checkpoint-3"),
+        metadata: {},
+        payload: {
+          threadId,
+          turnId,
+          createdAt: "2026-02-26T14:00:02.000Z",
+        },
+      });
+      assert.equal(yield* readTurnState, "interrupted");
+
+      yield* appendAndProject({
+        type: "thread.session-set",
+        eventId: EventId.make("evt-interrupt-checkpoint-4"),
+        aggregateKind: "thread",
+        aggregateId: threadId,
+        occurredAt: "2026-02-26T14:00:03.000Z",
+        commandId: CommandId.make("cmd-interrupt-checkpoint-4"),
+        causationEventId: null,
+        correlationId: CorrelationId.make("cmd-interrupt-checkpoint-4"),
+        metadata: {},
+        payload: {
+          threadId,
+          session: {
+            threadId,
+            status: "ready",
+            providerName: "claudeAgent",
+            providerInstanceId: ProviderInstanceId.make("claudeAgent"),
+            runtimeMode: "full-access",
+            activeTurnId: null,
+            lastError: null,
+            updatedAt: "2026-02-26T14:00:03.000Z",
+          },
+        },
+      });
+      assert.equal(yield* readTurnState, "interrupted");
+
+      yield* appendAndProject({
+        type: "thread.turn-diff-completed",
+        eventId: EventId.make("evt-interrupt-checkpoint-5"),
+        aggregateKind: "thread",
+        aggregateId: threadId,
+        occurredAt: "2026-02-26T14:00:04.000Z",
+        commandId: CommandId.make("cmd-interrupt-checkpoint-5"),
+        causationEventId: null,
+        correlationId: CorrelationId.make("cmd-interrupt-checkpoint-5"),
+        metadata: {},
+        payload: {
+          threadId,
+          turnId,
+          checkpointTurnCount: 1,
+          checkpointRef: CheckpointRef.make(
+            "refs/t3/checkpoints/thread-interrupt-checkpoint/turn/1",
+          ),
+          status: "ready",
+          files: [],
+          assistantMessageId: MessageId.make("assistant-interrupt-checkpoint"),
+          completedAt: "2026-02-26T14:00:04.000Z",
+        },
+      });
+
+      assert.equal(yield* readTurnState, "interrupted");
+    }),
   );
 
   it.effect("clears stale pending approvals from projected shell summaries", () =>

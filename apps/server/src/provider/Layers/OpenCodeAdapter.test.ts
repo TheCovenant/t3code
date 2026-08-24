@@ -16,6 +16,7 @@ import * as TestClock from "effect/testing/TestClock";
 import { beforeEach } from "vite-plus/test";
 
 import {
+  EnvironmentId,
   OpenCodeSettings,
   ProviderDriverKind,
   ProviderInstanceId,
@@ -38,6 +39,7 @@ import {
   makeOpenCodeAdapter,
   mergeOpenCodeAssistantText,
 } from "./OpenCodeAdapter.ts";
+import * as McpProviderSession from "../../mcp/McpProviderSession.ts";
 
 // Test-local service tag so the rest of the file can keep using `yield* OpenCodeAdapter`.
 class OpenCodeAdapter extends Context.Service<OpenCodeAdapter, OpenCodeAdapterShape>()(
@@ -74,6 +76,7 @@ const runtimeMock = {
     sessionDirectoryById: new Map<string, string>(),
     sessionUpdateCalls: [] as Array<{ sessionID: string; permission: unknown }>,
     forkCalls: [] as Array<{ sessionID: string; directory?: string }>,
+    mcpAdds: [] as Array<unknown>,
   },
   reset() {
     this.state.startCalls.length = 0;
@@ -94,6 +97,7 @@ const runtimeMock = {
     this.state.sessionDirectoryById.clear();
     this.state.sessionUpdateCalls.length = 0;
     this.state.forkCalls.length = 0;
+    this.state.mcpAdds.length = 0;
   },
 };
 
@@ -137,6 +141,12 @@ const OpenCodeRuntimeTestDouble: OpenCodeRuntimeShape = {
   runOpenCodeCommand: () => Effect.succeed({ stdout: "", stderr: "", code: 0 }),
   createOpenCodeSdkClient: ({ baseUrl, serverPassword }) =>
     ({
+      mcp: {
+        add: async (input: unknown) => {
+          runtimeMock.state.mcpAdds.push(input);
+          return { data: true };
+        },
+      },
       session: {
         create: async (input: Record<string, unknown>) => {
           runtimeMock.state.sessionCreateUrls.push(baseUrl);
@@ -246,6 +256,7 @@ const providerSessionDirectoryTestLayer = Layer.succeed(ProviderSessionDirectory
 // the layer graph reach for it — but the routing values the assertions
 // probe (serverUrl, serverPassword) must be threaded directly through the
 // decoded `OpenCodeSettings`.
+const decodeOpenCodeSettings = Schema.decodeEffect(OpenCodeSettings);
 const openCodeAdapterTestSettings = Schema.decodeSync(OpenCodeSettings)({
   binaryPath: "fake-opencode",
   serverUrl: "http://127.0.0.1:9999",
@@ -281,6 +292,87 @@ const advanceTestClock = (ms: number) =>
   TestClock.adjust(`${ms} millis`).pipe(Effect.andThen(Effect.yieldNow));
 
 it.layer(OpenCodeAdapterTestLayer)("OpenCodeAdapterLive", (it) => {
+  it.effect("registers the provider-scoped T3 MCP server with a local OpenCode runtime", () =>
+    Effect.gen(function* () {
+      const threadId = asThreadId("thread-opencode-mcp");
+      const config = {
+        environmentId: EnvironmentId.make("environment-opencode-mcp"),
+        threadId,
+        providerSessionId: "provider-session-opencode-mcp",
+        providerInstanceId: ProviderInstanceId.make("opencode"),
+        capabilities: ["threads"] as const,
+        endpoint: "http://127.0.0.1:43123/mcp/threads",
+        authorizationHeader: "Bearer opencode-mcp-token",
+      };
+      McpProviderSession.setMcpProviderSession(config);
+      const localSettings = yield* decodeOpenCodeSettings({
+        binaryPath: "fake-opencode-local",
+      });
+      const localLayer = Layer.effect(OpenCodeAdapter, makeOpenCodeAdapter(localSettings)).pipe(
+        Layer.provideMerge(Layer.succeed(OpenCodeRuntime, OpenCodeRuntimeTestDouble)),
+        Layer.provideMerge(ServerConfig.layerTest(process.cwd(), process.cwd())),
+        Layer.provideMerge(ServerSettingsService.layerTest()),
+        Layer.provideMerge(providerSessionDirectoryTestLayer),
+        Layer.provideMerge(NodeServices.layer),
+      );
+
+      yield* Effect.gen(function* () {
+        const adapter = yield* OpenCodeAdapter;
+        yield* adapter.startSession({
+          provider: ProviderDriverKind.make("opencode"),
+          threadId,
+          runtimeMode: "full-access",
+        });
+      }).pipe(
+        Effect.provide(localLayer),
+        Effect.ensuring(Effect.sync(() => McpProviderSession.clearMcpProviderSession(threadId))),
+      );
+
+      NodeAssert.deepEqual(runtimeMock.state.mcpAdds, [
+        {
+          name: "t3-code",
+          config: {
+            type: "remote",
+            url: config.endpoint,
+            headers: { Authorization: config.authorizationHeader },
+            oauth: false,
+          },
+        },
+      ]);
+    }),
+  );
+
+  it.effect("does not publish provider credentials into a shared external OpenCode server", () =>
+    Effect.gen(function* () {
+      const threadId = asThreadId("thread-opencode-external-mcp");
+      McpProviderSession.setMcpProviderSession({
+        environmentId: EnvironmentId.make("environment-opencode-external-mcp"),
+        threadId,
+        providerSessionId: "provider-session-opencode-external-mcp",
+        providerInstanceId: ProviderInstanceId.make("opencode"),
+        capabilities: ["threads"],
+        endpoint: "http://127.0.0.1:43123/mcp/threads",
+        authorizationHeader: "Bearer must-not-leak-to-shared-server",
+      });
+      const adapter = yield* OpenCodeAdapter;
+
+      yield* Effect.gen(function* () {
+        yield* adapter.startSession({
+          provider: ProviderDriverKind.make("opencode"),
+          threadId,
+          runtimeMode: "full-access",
+        });
+
+        NodeAssert.deepEqual(runtimeMock.state.mcpAdds, []);
+      }).pipe(
+        Effect.ensuring(adapter.stopSession(threadId).pipe(Effect.ignore)),
+        Effect.ensuring(Effect.sync(() => McpProviderSession.clearMcpProviderSession(threadId))),
+      );
+
+      NodeAssert.deepEqual(yield* adapter.listSessions(), []);
+    }),
+  );
+
   it.effect("reuses a configured OpenCode server URL instead of spawning a local server", () =>
     Effect.gen(function* () {
       const adapter = yield* OpenCodeAdapter;

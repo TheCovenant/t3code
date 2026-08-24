@@ -83,6 +83,7 @@ describe("applyThreadDetailEvent", () => {
         payload: {
           threadId: ThreadId.make("thread-2"),
           projectId: ProjectId.make("project-1"),
+          spawnedByThreadId: ThreadId.make("thread-parent"),
           title: "New Thread",
           modelSelection: { instanceId: ProviderInstanceId.make("codex"), model: "gpt-5.4" },
           runtimeMode: "full-access",
@@ -97,6 +98,7 @@ describe("applyThreadDetailEvent", () => {
       expect(result.kind).toBe("updated");
       if (result.kind === "updated") {
         expect(result.thread.id).toBe("thread-2");
+        expect(result.thread.spawnedByThreadId).toBe("thread-parent");
         expect(result.thread.title).toBe("New Thread");
         expect(result.thread.branch).toBe("main");
         expect(result.thread.messages).toEqual([]);

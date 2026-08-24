@@ -6,6 +6,7 @@ import {
   ThreadId,
   type OrchestrationEvent,
 } from "@t3tools/contracts";
+import { it as effectIt } from "@effect/vitest";
 import * as Effect from "effect/Effect";
 import { describe, expect, it } from "vite-plus/test";
 
@@ -56,6 +57,7 @@ describe("orchestration projector", () => {
           payload: {
             threadId: "thread-1",
             projectId: "project-1",
+            spawnedByThreadId: "thread-parent",
             title: "demo",
             modelSelection: {
               provider: ProviderDriverKind.make("codex"),
@@ -76,6 +78,7 @@ describe("orchestration projector", () => {
       {
         id: "thread-1",
         projectId: "project-1",
+        spawnedByThreadId: "thread-parent",
         title: "demo",
         modelSelection: {
           instanceId: "codex",
@@ -102,6 +105,117 @@ describe("orchestration projector", () => {
       },
     ]);
   });
+
+  effectIt.effect("preserves an interrupted latest turn when its final checkpoint arrives", () =>
+    Effect.gen(function* () {
+      const threadId = "thread-interrupt-checkpoint";
+      const turnId = "turn-interrupt-checkpoint";
+      const events: ReadonlyArray<OrchestrationEvent> = [
+        makeEvent({
+          sequence: 1,
+          type: "thread.created",
+          aggregateKind: "thread",
+          aggregateId: threadId,
+          occurredAt: "2026-02-26T14:00:00.000Z",
+          commandId: "cmd-interrupt-checkpoint-1",
+          payload: {
+            threadId,
+            projectId: "project-interrupt-checkpoint",
+            title: "Interrupted checkpoint",
+            modelSelection: {
+              provider: ProviderDriverKind.make("claudeAgent"),
+              model: "claude-sonnet-5",
+            },
+            runtimeMode: "full-access",
+            branch: "main",
+            worktreePath: "/tmp/project-interrupt-checkpoint",
+            createdAt: "2026-02-26T14:00:00.000Z",
+            updatedAt: "2026-02-26T14:00:00.000Z",
+          },
+        }),
+        makeEvent({
+          sequence: 2,
+          type: "thread.session-set",
+          aggregateKind: "thread",
+          aggregateId: threadId,
+          occurredAt: "2026-02-26T14:00:01.000Z",
+          commandId: "cmd-interrupt-checkpoint-2",
+          payload: {
+            threadId,
+            session: {
+              threadId,
+              status: "running",
+              providerName: "claudeAgent",
+              providerInstanceId: "claudeAgent",
+              runtimeMode: "full-access",
+              activeTurnId: turnId,
+              lastError: null,
+              updatedAt: "2026-02-26T14:00:01.000Z",
+            },
+          },
+        }),
+        makeEvent({
+          sequence: 3,
+          type: "thread.turn-interrupt-requested",
+          aggregateKind: "thread",
+          aggregateId: threadId,
+          occurredAt: "2026-02-26T14:00:02.000Z",
+          commandId: "cmd-interrupt-checkpoint-3",
+          payload: {
+            threadId,
+            turnId,
+            createdAt: "2026-02-26T14:00:02.000Z",
+          },
+        }),
+        makeEvent({
+          sequence: 4,
+          type: "thread.session-set",
+          aggregateKind: "thread",
+          aggregateId: threadId,
+          occurredAt: "2026-02-26T14:00:03.000Z",
+          commandId: "cmd-interrupt-checkpoint-4",
+          payload: {
+            threadId,
+            session: {
+              threadId,
+              status: "ready",
+              providerName: "claudeAgent",
+              providerInstanceId: "claudeAgent",
+              runtimeMode: "full-access",
+              activeTurnId: null,
+              lastError: null,
+              updatedAt: "2026-02-26T14:00:03.000Z",
+            },
+          },
+        }),
+        makeEvent({
+          sequence: 5,
+          type: "thread.turn-diff-completed",
+          aggregateKind: "thread",
+          aggregateId: threadId,
+          occurredAt: "2026-02-26T14:00:04.000Z",
+          commandId: "cmd-interrupt-checkpoint-5",
+          payload: {
+            threadId,
+            turnId,
+            checkpointTurnCount: 1,
+            checkpointRef: "refs/t3/checkpoints/thread-interrupt-checkpoint/turn/1",
+            status: "ready",
+            files: [],
+            assistantMessageId: "assistant-interrupt-checkpoint",
+            completedAt: "2026-02-26T14:00:04.000Z",
+          },
+        }),
+      ];
+
+      let result = createEmptyReadModel("2026-02-26T14:00:00.000Z");
+      for (const event of events) {
+        result = yield* projectEvent(result, event);
+      }
+
+      expect(result.threads[0]?.latestTurn?.state).toBe("interrupted");
+    }),
+  );
 
   it("fails when event payload cannot be decoded by runtime schema", async () => {
     const now = "2026-01-01T00:00:00.000Z";

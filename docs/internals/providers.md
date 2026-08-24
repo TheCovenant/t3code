@@ -36,6 +36,20 @@ Two registries separate configuration from live processes:
 [`ProviderService`][service] sits on top. It combines the adapter registry with the provider session
 directory to route session and turn operations for a thread, so callers name a thread, not an agent.
 
+Every provider session also receives a short-lived, thread-scoped `t3-code` MCP credential. The
+credential identifies the caller, while the environment is the thread-control boundary: its toolkit
+can discover, inspect, read, wait for, message, and interrupt any active environment-local thread.
+`spawnedByThreadId` records lineage but does not grant or deny access. Transcript reads reuse the
+turn-window cursor so complete history remains available in bounded pages. Preview is a separate
+capability: sessions with agent browser access use the combined `/mcp` endpoint, while sessions
+without it receive the thread-only `/mcp/threads` endpoint so disabled browser tools are not
+advertised. Both agent-driven creation and normal client creation use the same atomic
+thread/worktree bootstrap path.
+
+OpenCode receives this configuration when T3 launches its local server. T3 does not publish a
+provider bearer credential into a configured external OpenCode server because that MCP registry is
+shared beyond one T3-managed provider process.
+
 Adding a driver means writing the driver plus adapter and adding it to `BUILT_IN_DRIVERS`. No
 orchestration, contract, or client change is required for the common case.
 

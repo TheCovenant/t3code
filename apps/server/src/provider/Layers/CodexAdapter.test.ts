@@ -6,6 +6,7 @@ import * as NodePath from "node:path";
 import {
   ApprovalRequestId,
   CodexSettings,
+  EnvironmentId,
   EventId,
   ProviderDriverKind,
   ProviderInstanceId,
@@ -47,6 +48,7 @@ import {
   type CodexThreadSnapshot,
 } from "./CodexSessionRuntime.ts";
 import { makeCodexAdapter } from "./CodexAdapter.ts";
+import * as McpProviderSession from "../../mcp/McpProviderSession.ts";
 const decodeCodexSettings = Schema.decodeSync(CodexSettings);
 
 // Test-local service tag so the rest of the file can keep using `yield* CodexAdapter`.
@@ -310,6 +312,44 @@ const sessionErrorLayer = it.layer(
 );
 
 sessionErrorLayer("CodexAdapterLive session errors", (it) => {
+  it.effect("passes the provider-scoped T3 MCP server into a Codex session", () =>
+    Effect.gen(function* () {
+      const adapter = yield* CodexAdapter;
+      const threadId = asThreadId("sess-codex-mcp");
+      const config = {
+        environmentId: EnvironmentId.make("environment-codex-mcp"),
+        threadId,
+        providerSessionId: "provider-session-codex-mcp",
+        providerInstanceId: ProviderInstanceId.make("codex"),
+        capabilities: ["threads"] as const,
+        endpoint: "http://127.0.0.1:43123/mcp/threads",
+        authorizationHeader: "Bearer codex-mcp-token",
+      };
+      McpProviderSession.setMcpProviderSession(config);
+
+      yield* adapter
+        .startSession({
+          provider: ProviderDriverKind.make("codex"),
+          threadId,
+          runtimeMode: "full-access",
+        })
+        .pipe(
+          Effect.ensuring(Effect.sync(() => McpProviderSession.clearMcpProviderSession(threadId))),
+        );
+
+      const runtime = sessionRuntimeFactory.lastRuntime;
+      NodeAssert.ok(runtime);
+      NodeAssert.equal(runtime.options.browserToolsAvailable, false);
+      NodeAssert.equal(runtime.options.environment?.T3_MCP_BEARER_TOKEN, "codex-mcp-token");
+      NodeAssert.deepStrictEqual(runtime.options.appServerArgs, [
+        "-c",
+        `mcp_servers.t3-code.url=${config.endpoint}`,
+        "-c",
+        'mcp_servers.t3-code.bearer_token_env_var="T3_MCP_BEARER_TOKEN"',
+      ]);
+    }),
+  );
+
   it.effect("maps missing adapter sessions to ProviderAdapterSessionNotFoundError", () =>
     Effect.gen(function* () {
       const adapter = yield* CodexAdapter;
