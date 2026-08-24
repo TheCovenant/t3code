@@ -356,17 +356,20 @@ it.layer(OpenCodeAdapterTestLayer)("OpenCodeAdapterLive", (it) => {
       });
       const adapter = yield* OpenCodeAdapter;
 
-      yield* adapter
-        .startSession({
+      yield* Effect.gen(function* () {
+        yield* adapter.startSession({
           provider: ProviderDriverKind.make("opencode"),
           threadId,
           runtimeMode: "full-access",
-        })
-        .pipe(
-          Effect.ensuring(Effect.sync(() => McpProviderSession.clearMcpProviderSession(threadId))),
-        );
+        });
 
-      NodeAssert.deepEqual(runtimeMock.state.mcpAdds, []);
+        NodeAssert.deepEqual(runtimeMock.state.mcpAdds, []);
+      }).pipe(
+        Effect.ensuring(adapter.stopSession(threadId).pipe(Effect.ignore)),
+        Effect.ensuring(Effect.sync(() => McpProviderSession.clearMcpProviderSession(threadId))),
+      );
+
+      NodeAssert.deepEqual(yield* adapter.listSessions(), []);
     }),
   );
 
