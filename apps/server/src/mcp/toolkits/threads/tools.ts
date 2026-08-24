@@ -11,6 +11,8 @@ import {
   ThreadReadInput,
   ThreadReadResult,
   ThreadSendInput,
+  ThreadSkillInput,
+  ThreadSkillResult,
   ThreadSpawnInput,
   ThreadSpawnResult,
   ThreadTargetInput,
@@ -21,6 +23,19 @@ const dependencies = [
   McpInvocationContext.McpInvocationContext,
   ThreadControlService.ThreadControl,
 ];
+
+export const ThreadSkillTool = Tool.make("thread_skill", {
+  description:
+    "Load T3 Code's built-in thread-control skill. Use it when the user explicitly asks to orchestrate T3 chats or worktrees and you need the complete spawn, status, transcript, follow-up, wait, and safety workflow.",
+  parameters: ThreadSkillInput,
+  success: ThreadSkillResult,
+  failure: ThreadControlError,
+  dependencies: [McpInvocationContext.McpInvocationContext],
+})
+  .annotate(Tool.Title, "Load T3 thread-control skill")
+  .annotate(Tool.Readonly, true)
+  .annotate(Tool.Destructive, false)
+  .annotate(Tool.Idempotent, true);
 
 export const ThreadSpawnTool = Tool.make("thread_spawn", {
   description:
@@ -109,6 +124,7 @@ export const ThreadWaitTool = Tool.make("thread_wait", {
   .annotate(Tool.Destructive, false);
 
 export const ThreadToolkit = Toolkit.make(
+  ThreadSkillTool,
   ThreadSpawnTool,
   ThreadListTool,
   ThreadGetTool,

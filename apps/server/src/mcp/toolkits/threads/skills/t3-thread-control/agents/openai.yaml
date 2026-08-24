@@ -1,0 +1,4 @@
+interface:
+  display_name: "T3 Thread Control"
+  short_description: "Control T3 chats and isolated worktrees"
+  default_prompt: "Use $t3-thread-control to delegate work to another T3 chat and report its result."

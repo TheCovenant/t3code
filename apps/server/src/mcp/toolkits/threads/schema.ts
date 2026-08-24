@@ -11,6 +11,15 @@ const Prompt = TrimmedNonEmptyString.check(Schema.isMaxLength(200_000));
 const Title = TrimmedNonEmptyString.check(Schema.isMaxLength(200));
 const RefName = TrimmedNonEmptyString.check(Schema.isMaxLength(255));
 
+export const ThreadSkillInput = Schema.Record(Schema.String, Schema.Never);
+export type ThreadSkillInput = typeof ThreadSkillInput.Type;
+
+export const ThreadSkillResult = Schema.Struct({
+  name: Schema.Literal("t3-thread-control"),
+  instructions: TrimmedNonEmptyString,
+});
+export type ThreadSkillResult = typeof ThreadSkillResult.Type;
+
 export const ThreadSpawnInput = Schema.Struct({
   prompt: Prompt,
   title: Schema.optional(Title),
