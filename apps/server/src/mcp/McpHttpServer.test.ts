@@ -47,6 +47,12 @@ const threadSummary = (targetThreadId: ThreadId) => ({
   projectId: ProjectId.make("project-mcp-test"),
   spawnedByThreadId: threadId,
   title: `Controlled by ${threadId}`,
+  modelSelection: {
+    instanceId: ProviderInstanceId.make("codex"),
+    model: "gpt-5.6",
+  },
+  runtimeMode: "full-access" as const,
+  interactionMode: "default" as const,
   status: "done" as const,
   blockedReason: null,
   branch: "main",
@@ -94,6 +100,15 @@ it.effect("registers the thread-only toolkit and scopes calls to the invoking ch
     for (const { tool } of server.tools) {
       expect(tool.inputSchema).toMatchObject({ type: "object" });
     }
+    expect(
+      server.tools.find(({ tool }) => tool.name === "thread_spawn")?.tool.inputSchema,
+    ).toMatchObject({
+      properties: {
+        modelSelection: {},
+        runtimeMode: {},
+        interactionMode: {},
+      },
+    });
     const annotations = Object.fromEntries(
       server.tools.map(({ tool }) => [tool.name, tool.annotations]),
     );
@@ -151,6 +166,7 @@ it.effect("registers the thread-only toolkit and scopes calls to the invoking ch
     expect(skill.isError).toBe(false);
     expect(skill.structuredContent).toMatchObject({ name: "t3-thread-control" });
     expect(skill.structuredContent?.instructions).toContain("# T3 Thread Control");
+    expect(skill.structuredContent?.instructions).toContain("modelSelection");
     for (const toolName of toolNames) {
       expect(skill.structuredContent?.instructions).toContain(`\`${toolName}\``);
     }
@@ -168,6 +184,9 @@ it.effect("routes every thread tool with the authenticated caller identity", () 
             ...threadSummary(childId),
             spawnedByThreadId: caller,
             title: input.title ?? input.prompt,
+            modelSelection: input.modelSelection ?? threadSummary(childId).modelSelection,
+            runtimeMode: input.runtimeMode ?? "full-access",
+            interactionMode: input.interactionMode ?? "default",
           },
         }),
       list: (caller, input) =>
@@ -220,7 +239,13 @@ it.effect("routes every thread tool with the authenticated caller identity", () 
           Effect.provideService(McpSchema.McpServerClient, client),
         );
 
-    const spawned = yield* call("thread_spawn", { prompt: "child prompt", title: "Child" });
+    const spawned = yield* call("thread_spawn", {
+      prompt: "child prompt",
+      title: "Child",
+      modelSelection: { instanceId: "claudeAgent", model: "claude-opus-4-1" },
+      runtimeMode: "approval-required",
+      interactionMode: "plan",
+    });
     const listed = yield* call("thread_list", { scope: "project", limit: 2, cursor: "cursor" });
     const inspected = yield* call("thread_get", { threadId: targetId });
     const read = yield* call("thread_read", { threadId: targetId, turnLimit: 3 });
@@ -229,7 +254,14 @@ it.effect("routes every thread tool with the authenticated caller identity", () 
     const waited = yield* call("thread_wait", { threadId: targetId, timeoutSeconds: 6 });
 
     expect(spawned.structuredContent).toMatchObject({
-      thread: { threadId: childId, spawnedByThreadId: threadId, title: "Child" },
+      thread: {
+        threadId: childId,
+        spawnedByThreadId: threadId,
+        title: "Child",
+        modelSelection: { instanceId: "claudeAgent", model: "claude-opus-4-1" },
+        runtimeMode: "approval-required",
+        interactionMode: "plan",
+      },
     });
     expect(listed.structuredContent).toMatchObject({
       threads: [{ threadId, title: "project:2" }],
@@ -294,6 +326,22 @@ it.effect("enforces bounded thread-tool inputs at the MCP protocol boundary", ()
       { name: "thread_spawn", arguments: { prompt: "" } },
       { name: "thread_spawn", arguments: { prompt: "x".repeat(200_001) } },
       { name: "thread_spawn", arguments: { prompt: "ok", title: "x".repeat(201) } },
+      {
+        name: "thread_spawn",
+        arguments: {
+          prompt: "ok",
+          modelSelection: { instanceId: "not a provider", model: "model" },
+        },
+      },
+      {
+        name: "thread_spawn",
+        arguments: {
+          prompt: "ok",
+          modelSelection: { instanceId: "codex", model: "" },
+        },
+      },
+      { name: "thread_spawn", arguments: { prompt: "ok", runtimeMode: "unrestricted" } },
+      { name: "thread_spawn", arguments: { prompt: "ok", interactionMode: "chat" } },
       {
         name: "thread_spawn",
         arguments: { prompt: "ok", worktree: { branch: "x".repeat(256) } },

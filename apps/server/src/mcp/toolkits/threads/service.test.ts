@@ -20,6 +20,7 @@ import * as Effect from "effect/Effect";
 import * as Fiber from "effect/Fiber";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
+import * as Schema from "effect/Schema";
 import * as Stream from "effect/Stream";
 import * as TestClock from "effect/testing/TestClock";
 
@@ -28,11 +29,12 @@ import * as ProjectionSnapshotQuery from "../../../orchestration/Services/Projec
 import * as ThreadBootstrap from "../../../orchestration/ThreadBootstrap.ts";
 import * as ServerRuntimeStartup from "../../../serverRuntimeStartup.ts";
 import * as ThreadControl from "./service.ts";
-import type { ThreadControlError } from "./schema.ts";
+import { ThreadSpawnInput, type ThreadControlError } from "./schema.ts";
 
 const now = "2026-08-19T00:00:00.000Z";
 const parentThreadId = ThreadId.make("thread-parent");
 const projectId = ProjectId.make("project-parent");
+const decodeThreadSpawnInput = Schema.decodeUnknownEffect(ThreadSpawnInput);
 
 const sourceThread: OrchestrationThreadShell = {
   id: parentThreadId,
@@ -189,7 +191,42 @@ it.effect("spawns a child chat in the parent's checkout by default", () =>
     assert.deepEqual(command.modelSelection, sourceThread.modelSelection);
     assert.equal(command.runtimeMode, sourceThread.runtimeMode);
     assert.equal(command.interactionMode, sourceThread.interactionMode);
+    assert.deepEqual(result.thread.modelSelection, sourceThread.modelSelection);
+    assert.equal(result.thread.runtimeMode, sourceThread.runtimeMode);
+    assert.equal(result.thread.interactionMode, sourceThread.interactionMode);
     assert.equal(result.thread.worktreePath, "/tmp/project-parent");
+  }),
+);
+
+it.effect("spawns a child chat with an explicit provider, model, and runtime policy", () =>
+  Effect.gen(function* () {
+    const commands: Array<OrchestrationCommand> = [];
+    const control = yield* makeControl({ commands });
+    const requestedModelSelection = {
+      instanceId: ProviderInstanceId.make("claudeAgent"),
+      model: "claude-opus-4-1",
+    };
+    const input = yield* decodeThreadSpawnInput({
+      prompt: "Review the implementation independently",
+      modelSelection: requestedModelSelection,
+      runtimeMode: "approval-required",
+      interactionMode: "plan",
+    });
+
+    const result = yield* control.spawn(parentThreadId, input);
+    const command = commands[0];
+
+    assert.equal(command?.type, "thread.turn.start");
+    if (command?.type !== "thread.turn.start") return;
+    assert.deepEqual(command.modelSelection, requestedModelSelection);
+    assert.equal(command.runtimeMode, "approval-required");
+    assert.equal(command.interactionMode, "plan");
+    assert.deepEqual(command.bootstrap?.createThread?.modelSelection, requestedModelSelection);
+    assert.equal(command.bootstrap?.createThread?.runtimeMode, "approval-required");
+    assert.equal(command.bootstrap?.createThread?.interactionMode, "plan");
+    assert.deepEqual(result.thread.modelSelection, requestedModelSelection);
+    assert.equal(result.thread.runtimeMode, "approval-required");
+    assert.equal(result.thread.interactionMode, "plan");
   }),
 );
 
@@ -311,6 +348,9 @@ it.effect("inspects an unrelated chat in the same environment", () =>
     const detail = yield* control.get(parentThreadId, { threadId: unrelatedId });
     assert.equal(detail.threadId, unrelatedId);
     assert.equal(detail.spawnedByThreadId, ThreadId.make("another-parent"));
+    assert.deepEqual(detail.modelSelection, sourceThread.modelSelection);
+    assert.equal(detail.runtimeMode, sourceThread.runtimeMode);
+    assert.equal(detail.interactionMode, sourceThread.interactionMode);
     assert.equal(detail.status, "idle");
   }),
 );

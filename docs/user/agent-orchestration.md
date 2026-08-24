@@ -6,7 +6,8 @@ keeps its own transcript and checkpoints, and can be opened from web, desktop, o
 
 An agent can:
 
-- start a chat with an initial prompt
+- start a chat with an initial prompt and optionally choose its provider, model, permission mode,
+  and interaction mode
 - list active chats across the environment, or narrow the list to its project or direct children
 - inspect status and read the full transcript of any active chat in bounded pages
 - send follow-up instructions to another chat
@@ -17,9 +18,11 @@ T3 ships the thread-control guide with the server and exposes it as the read-onl
 `thread_skill` tool. It is available whenever thread control is available, independent of the
 active project's skill folders.
 
-Child chats inherit the current project, provider, model, permission mode, and interaction mode.
-By default they also use the current checkout. For isolated edits, the agent can explicitly create a
-new Git worktree and branch; the project's worktree setup script runs before that child's first turn.
+Child chats always inherit the current project. Their provider, model, permission mode, and
+interaction mode inherit by default, but the spawning agent can select different configured values
+for the delegated task. Spawn, list, and inspection results show the effective selection. By default
+children also use the current checkout. For isolated edits, the agent can explicitly create a new Git
+worktree and branch; the project's worktree setup script runs before that child's first turn.
 
 The T3 environment is the control boundary. Like panes in one Herdr session, active chats are
 addressable by opaque ID even when they are siblings, grandchildren, or belong to different

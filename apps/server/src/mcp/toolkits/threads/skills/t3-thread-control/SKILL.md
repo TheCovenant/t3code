@@ -49,7 +49,21 @@ Statuses mean:
 
 Use `thread_spawn` with a complete initial prompt. Give the child enough context to work independently, including the requested output, relevant paths, constraints, and whether it may edit files. Use `title` when a short label will make parallel work easier to track.
 
-A spawned chat inherits the caller's project, provider instance, model, runtime mode, and interaction mode. `thread_spawn` does not select a different provider or model. It can still inspect and control an already-active chat that uses another provider when both belong to the same environment.
+A spawned chat always inherits the caller's project. By default it also inherits the caller's provider instance, model, runtime mode, and interaction mode. Override those defaults when the delegated task needs a different worker:
+
+```json
+{
+  "prompt": "Review the implementation independently.",
+  "modelSelection": {
+    "instanceId": "claudeAgent",
+    "model": "claude-sonnet-4-6"
+  },
+  "runtimeMode": "full-access",
+  "interactionMode": "default"
+}
+```
+
+`modelSelection.instanceId` is the configured T3 provider-instance ID, not merely a provider family name. The model must belong to that instance. Omit any override that should inherit from the caller. Read the effective selection back from the returned thread summary, `thread_get`, or `thread_list`.
 
 By default, the child shares the caller's checkout. Prefer that for read-only investigation or tightly coordinated sequential work. Concurrent editors in one checkout can overwrite or confuse one another, so split write tasks by non-overlapping files or request an isolated worktree:
 
@@ -102,4 +116,4 @@ When spawning more than one chat:
 
 T3 thread control operates on chats, not arbitrary terminals. It cannot run a standalone shell command in another pane, choose an executable for a new chat, archive chats, or delete worktrees. Use the normal repository tools for local commands and the T3 client for lifecycle operations that the toolkit does not expose.
 
-Managed Codex, Claude, Cursor, Grok, and OpenCode sessions receive T3's MCP configuration when supported by their adapters. A configured external OpenCode server is intentionally excluded because T3 does not publish a provider credential into a shared external server.
+Managed Codex, Claude, Cursor, Grok, and OpenCode sessions receive T3's MCP configuration when supported by their adapters. `thread_spawn` can select across those configured provider instances. A configured external OpenCode server is intentionally excluded because T3 does not publish a provider credential into a shared external server.

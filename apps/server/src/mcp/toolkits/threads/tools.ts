@@ -39,7 +39,7 @@ export const ThreadSkillTool = Tool.make("thread_skill", {
 
 export const ThreadSpawnTool = Tool.make("thread_spawn", {
   description:
-    "Create and start a T3 chat. The new chat records this chat as its parent for lineage, inherits its project, provider, model, runtime, and interaction mode, and shares its checkout unless worktree is supplied. A worktree creates an isolated Git checkout from baseBranch (or this chat's branch). Returns the new threadId as an opaque handle.",
+    "Create and start a T3 chat. The new chat records this chat as its parent for lineage and inherits its project. By default it inherits this chat's provider/model, runtime mode, interaction mode, and checkout; pass modelSelection, runtimeMode, interactionMode, or worktree to override them. modelSelection may target any configured provider instance and model. Returns the new thread summary, including its opaque threadId and effective selection.",
   parameters: ThreadSpawnInput,
   success: ThreadSpawnResult,
   failure: ThreadControlError,
