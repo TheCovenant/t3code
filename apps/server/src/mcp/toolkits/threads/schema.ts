@@ -1,7 +1,10 @@
 import {
+  ModelSelection,
   OrchestrationMessage,
   OrchestrationThreadActivity,
   ProjectId,
+  ProviderInteractionMode,
+  RuntimeMode,
   ThreadId,
   TrimmedNonEmptyString,
 } from "@t3tools/contracts";
@@ -23,6 +26,9 @@ export type ThreadSkillResult = typeof ThreadSkillResult.Type;
 export const ThreadSpawnInput = Schema.Struct({
   prompt: Prompt,
   title: Schema.optional(Title),
+  modelSelection: Schema.optional(ModelSelection),
+  runtimeMode: Schema.optional(RuntimeMode),
+  interactionMode: Schema.optional(ProviderInteractionMode),
   worktree: Schema.optional(
     Schema.Struct({
       baseBranch: Schema.optional(RefName),
@@ -81,6 +87,9 @@ export const ThreadControlSummary = Schema.Struct({
   projectId: ProjectId,
   spawnedByThreadId: Schema.NullOr(ThreadId),
   title: TrimmedNonEmptyString,
+  modelSelection: ModelSelection,
+  runtimeMode: RuntimeMode,
+  interactionMode: ProviderInteractionMode,
   status: ThreadControlStatus,
   blockedReason: Schema.NullOr(Schema.String),
   branch: Schema.NullOr(Schema.String),

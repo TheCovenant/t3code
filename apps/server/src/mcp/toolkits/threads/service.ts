@@ -116,6 +116,9 @@ function summarize(thread: OrchestrationThreadShell): ThreadControlSummary {
     projectId: thread.projectId,
     spawnedByThreadId: thread.spawnedByThreadId ?? null,
     title: thread.title,
+    modelSelection: thread.modelSelection,
+    runtimeMode: thread.runtimeMode,
+    interactionMode: thread.interactionMode,
     ...state,
     branch: thread.branch,
     worktreePath: thread.worktreePath,
@@ -309,6 +312,9 @@ export const make = Effect.gen(function* () {
       const childThreadId = ThreadId.make(threadUuid);
       const createdAt = yield* DateTime.now.pipe(Effect.map(DateTime.formatIso));
       const title = input.title ?? deriveTitle(input.prompt);
+      const modelSelection = input.modelSelection ?? source.modelSelection;
+      const runtimeMode = input.runtimeMode ?? source.runtimeMode;
+      const interactionMode = input.interactionMode ?? source.interactionMode;
       const wantsWorktree = input.worktree !== undefined;
       const baseBranch = input.worktree?.baseBranch ?? source.branch;
       if (wantsWorktree && !baseBranch) {
@@ -333,18 +339,18 @@ export const make = Effect.gen(function* () {
             text: input.prompt,
             attachments: [],
           },
-          modelSelection: source.modelSelection,
+          modelSelection,
           titleSeed: title,
-          runtimeMode: source.runtimeMode,
-          interactionMode: source.interactionMode,
+          runtimeMode,
+          interactionMode,
           bootstrap: {
             createThread: {
               projectId: source.projectId,
               spawnedByThreadId: parentThreadId,
               title,
-              modelSelection: source.modelSelection,
-              runtimeMode: source.runtimeMode,
-              interactionMode: source.interactionMode,
+              modelSelection,
+              runtimeMode,
+              interactionMode,
               branch: wantsWorktree ? baseBranch : source.branch,
               worktreePath: wantsWorktree ? null : source.worktreePath,
               createdAt,
@@ -372,6 +378,9 @@ export const make = Effect.gen(function* () {
           projectId: source.projectId,
           spawnedByThreadId: parentThreadId,
           title,
+          modelSelection,
+          runtimeMode,
+          interactionMode,
           status: "working",
           blockedReason: null,
           branch: childBranch,
